@@ -10,8 +10,9 @@ export interface RemoteTokenDeps {
   getSecret: (ref: string) => string | undefined;
   urlFor: (id: string, project: string) => string | undefined;
   checkToken: (url: string, token: string) => Promise<N8nTokenCheck>;
-  /** I nomi dei segreti presenti (mai i valori). Senza, gli orfani non si possono
-   *  trovare: `pruneOrphans` allora restituisce una lista vuota e non inventa. */
+  /** The stored secret references (names, never values). Without them the
+   *  orphans cannot be found: `pruneOrphans` then returns an empty list and
+   *  invents nothing. */
   listRefs?: () => string[];
 }
 
@@ -53,7 +54,7 @@ export function createRemoteTokenOps(deps: RemoteTokenDeps) {
       } catch { return 'unreachable'; }
     },
 
-    // ─── T100: lo stesso, ma per il token personale di un agente ────────────
+    // ─── The same, for one agent's own token ───────────────────────────────
     setFor(id: string, project: string, agentId: unknown, rawToken: string): { ok: boolean; error?: string } {
       const secretRef = agentRef(id, project, agentId);
       if (!secretRef) return { ok: false, error: 'invalid remote, project or agent' };
@@ -85,9 +86,9 @@ export function createRemoteTokenOps(deps: RemoteTokenDeps) {
         return await deps.checkToken(url, token);
       } catch { return 'unreachable'; }
     },
-    /** Cancella i segreti per agente di chi non e' piu' nella lista (o di tutti,
-     *  con `next` vuoto, quando il connettore del progetto viene tolto). Il token
-     *  del progetto non si tocca. */
+    /** Deletes the per-agent secrets of agents no longer listed (or of all of
+     *  them, with an empty `next`, when the project connector is removed). The
+     *  project token is never touched. */
     pruneAgents(id: string, project: string, previous: readonly string[], next: readonly string[]): string[] {
       const keep = new Set(next);
       const removed: string[] = [];
@@ -96,17 +97,17 @@ export function createRemoteTokenOps(deps: RemoteTokenDeps) {
         const secretRef = agentRef(id, project, agentId);
         if (!secretRef) continue;
         try { if (deps.deleteSecret(secretRef)) removed.push(agentId); }
-        catch { /* un segreto che non si cancella si ritenta al prossimo cambio */ }
+        catch { /* a secret that will not delete is retried at the next change */ }
       }
       return removed;
     },
-    /** Cancella i segreti per agente il cui `agentId` non e' nella lista attuale:
-     *  gli orfani, cioe' quelli rimasti perche' una cancellazione e' fallita o
-     *  perche' la configurazione e' stata scritta senza passare di qui. Il token
-     *  del progetto (due segmenti) e gli altri progetti non si toccano. */
+    /** Deletes the per-agent secrets whose `agentId` is not in the current list:
+     *  the orphans, left behind by a failed deletion or by a config written
+     *  without passing through here. The project token (two segments) and the
+     *  other projects are never touched. */
     pruneOrphans(id: string, project: string, keep: readonly string[]): string[] {
-      // Stessa guardia di `remoteSecretRef(id, project)`: se il connettore o il
-      // progetto non sono validi il riferimento non esiste, e non si cancella nulla.
+      // Same guard as `remoteSecretRef(id, project)`: an invalid connector or
+      // project has no reference at all, and nothing is deleted.
       if (!deps.listRefs || !ref(id, project)) return [];
       const prefix = `mcp:${id}:${project}:`;
       const kept = new Set(keep);
@@ -118,17 +119,17 @@ export function createRemoteTokenOps(deps: RemoteTokenDeps) {
         const agentId = secretRef.slice(prefix.length);
         if (kept.has(agentId) || !isN8nProjectKey(agentId)) continue;
         try { if (deps.deleteSecret(secretRef)) removed.push(agentId); }
-        catch { /* resta orfano: lo si ritenta al prossimo salvataggio */ }
+        catch { /* stays an orphan: retried at the next save */ }
       }
       return removed;
     }
   };
 }
 
-/** Il token con cui un agente parla con l'upstream: prima il suo, poi quello del
- *  progetto. Non restituisce nulla se none dei due c'e' (fail closed). L'AGENTE
- *  deve essere gia' stato abilitato da `resolveRemoteProject`: qui si sceglie
- *  solo QUALE token usare, mai SE usarlo. */
+/** The token an agent uses towards the upstream: its own first, the project's
+ *  otherwise. Returns nothing when neither exists (fail closed). The AGENT must
+ *  already be enabled by `resolveRemoteProject`: here we only choose WHICH token
+ *  to use, never WHETHER to use one. */
 export function createAgentTokenResolver(deps: { getSecret: (ref: string) => string | undefined }) {
   return (id: string, project: string, agentId: string): string | undefined => {
     const own = remoteAgentSecretRef(id, project, agentId);

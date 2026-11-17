@@ -1487,7 +1487,7 @@ const api = {
     ipcRenderer.invoke('mcp:remoteHasToken', id, project),
   mcpRemoteTestToken: (id: string, project: string): Promise<'missing' | 'valid' | 'invalid' | 'unreachable'> =>
     ipcRenderer.invoke('mcp:remoteTestToken', id, project),
-  // T100: one agent's own token. State only crosses the bridge, never the bearer.
+  // One agent's own token. State only crosses the bridge, never the bearer.
   mcpRemoteAgentSetToken: (id: string, project: string, agentId: string, token: string): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('mcp:remoteAgentSetToken', { id, project, agentId, token }),
   mcpRemoteAgentClearToken: (id: string, project: string, agentId: string): Promise<{ ok: boolean }> =>

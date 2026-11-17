@@ -1,7 +1,7 @@
 'use strict';
 
-// T100: every agent of a project may carry its own Team AI token. An agent
-// without one keeps using the project token, so nobody is left without tools.
+// Every agent of a project may carry its own Team AI token. An agent without
+// one keeps using the project token, so nobody is left without tools.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -170,10 +170,10 @@ test('the settings panel offers a personal token per agent and all locales have 
   }
 });
 
-// ─── Giro 2: le note di Gideon ────────────────────────────────────────────────
+// ─── Edge cases: project ref, panel reload, orphans ──────────────────────────
 
 test('the agent secret ref validates the project too', () => {
-  // N1: l'isolamento non deve dipendere da un controllo fatto altrove.
+  // The isolation must not depend on a check made elsewhere.
   assert.equal(remoteAgentSecretRef('teamai', 'p:x', 'b'), undefined);
   assert.equal(remoteAgentSecretRef('teamai', 'constructor', 'b'), undefined);
   assert.equal(remoteAgentSecretRef('teamai', '', 'b'), undefined);
@@ -181,8 +181,8 @@ test('the agent secret ref validates the project too', () => {
 });
 
 test('the panel reloads the agent state when the agent list changes', () => {
-  // N3: senza gli agentId nella chiave, togliere e rimettere un agente lascia
-  // «impostato» un token che la pulizia ha cancellato.
+  // Without the agent ids in the key, removing and re-adding an agent leaves
+  // "set" a token the cleanup has deleted.
   const { agentTokenRowsKey } = loadTs('src/shared/mcpAgentTokenRows.ts');
   const one = { teamai: { projects: { BURD: { agents: ['agent-a'] } } } };
   const removed = { teamai: { projects: { BURD: { agents: [] } } } };
@@ -198,8 +198,8 @@ test('the panel reloads the agent state when the agent list changes', () => {
 });
 
 test('the cleanup removes orphan agent secrets of a project', () => {
-  // N2, ramo scelto: il portachiavi sa elencare i riferimenti, quindi gli orfani
-  // (agente non piu' in lista, segreto rimasto) si cancellano.
+  // The secret store can list its references, so the orphans (agent no longer
+  // listed, secret left behind) are deleted.
   const { secrets, deps } = store([
     ['mcp:teamai:BURD', FAKE_PROJECT_TOKEN],
     ['mcp:teamai:BURD:agent-a', FAKE_AGENT_TOKEN],
@@ -210,8 +210,8 @@ test('the cleanup removes orphan agent secrets of a project', () => {
   assert.deepEqual(removed.sort(), ['ghost']);
   assert.equal(secrets.has('mcp:teamai:BURD:ghost'), false);
   assert.equal(secrets.has('mcp:teamai:BURD:agent-a'), true);
-  assert.equal(secrets.has('mcp:teamai:BURD'), true, 'il token del progetto resta');
-  assert.equal(secrets.has('mcp:teamai:SHOP:ghost'), true, 'un altro progetto non si tocca');
+  assert.equal(secrets.has('mcp:teamai:BURD'), true, 'the project token stays');
+  assert.equal(secrets.has('mcp:teamai:SHOP:ghost'), true, 'another project is not touched');
 });
 
 test('without a listing capability the cleanup reports it instead of guessing', () => {
@@ -221,8 +221,8 @@ test('without a listing capability the cleanup reports it instead of guessing', 
 });
 
 test('an invalid connector id makes the orphan cleanup do nothing', () => {
-  // Giro 3: stessa guardia di remoteSecretRef(id, project). Un id costruito ad
-  // arte non deve cancellare niente, nemmeno se il prefisso combacia.
+  // Same guard as remoteSecretRef(id, project): a hand-made id must delete
+  // nothing, even when the prefix happens to match.
   const { secrets, deps } = store([
     ['mcp:teamai:p:BURD:ghost', FAKE_AGENT_TOKEN],
     ['mcp:teamai:BURD:ghost', FAKE_AGENT_TOKEN_B]]);
@@ -230,6 +230,6 @@ test('an invalid connector id makes the orphan cleanup do nothing', () => {
   assert.deepEqual(ops.pruneOrphans('teamai:p', 'BURD', []), []);
   assert.equal(secrets.has('mcp:teamai:p:BURD:ghost'), true);
   assert.equal(secrets.has('mcp:teamai:BURD:ghost'), true);
-  // e l'id buono continua a funzionare
+  // and the good id keeps working
   assert.deepEqual(ops.pruneOrphans('teamai', 'BURD', []).sort(), ['ghost']);
 });

@@ -1,7 +1,7 @@
-/** T100/N3: la chiave con cui il pannello ricarica lo stato «token impostato».
- *  Deve cambiare quando cambia l'ELENCO degli agenti, non solo i progetti: se un
- *  agente esce dalla lista il suo segreto viene cancellato, e al rientro il
- *  pannello mostrerebbe «impostato» un token che non esiste piu'. */
+/** The key the settings panel reloads the "token is set" state on. It must
+ *  change when the list of AGENTS changes, not only the projects: when an agent
+ *  leaves the list its secret is deleted, and on re-entry the panel would show
+ *  "set" for a token that no longer exists. */
 export interface AgentRowsSource {
   [id: string]: { projects?: Record<string, { agents?: string[] }> } | undefined;
 }

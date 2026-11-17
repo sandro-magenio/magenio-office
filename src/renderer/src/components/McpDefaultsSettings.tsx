@@ -203,8 +203,8 @@ export function McpDefaultsSettings({ config }: McpDefaultsSettingsProps) {
   const remoteRows = MCP_CATALOG.filter((e) => e.remote).flatMap((e) =>
     Object.keys(remoteProjects(e.id)).sort().map((project) => [e.id, project] as const));
   const remoteRowsKey = remoteRows.map(([id, project]) => remoteKey(id, project)).join('\n');
-  // T100/N3: gli agenti fanno parte della chiave: se uno esce dalla lista il suo
-  // segreto viene cancellato e lo stato «impostato» va ricaricato, non ricordato.
+  // The agents are part of the key: when one leaves the list its secret is
+  // deleted and the "set" state must be reloaded, not remembered.
   const agentRowsKey = agentTokenRowsKey(config.mcpDefaults);
   const [remoteHasToken, setRemoteHasToken] = useState<Record<string, boolean>>({});
   const [remoteNewProject, setRemoteNewProject] = useState<Record<string, string>>({});
@@ -286,8 +286,8 @@ export function McpDefaultsSettings({ config }: McpDefaultsSettingsProps) {
       fail();
     }
   };
-  // ─── T100: token personale di un agente ────────────────────────────────
-  // Solo lo stato attraversa l'IPC: il valore salvato non si rilegge mai.
+  // ─── One agent's own token ─────────────────────────────────────────────
+  // Only state crosses the IPC bridge: the saved value is never read back.
   const agentKey = (id: string, project: string, agentId: string) => `${id}:${project}:${agentId}`;
   const [agentHasToken, setAgentHasToken] = useState<Record<string, boolean>>({});
   const [agentCheck, setAgentCheck] = useState<Record<string, 'missing' | 'valid' | 'invalid' | 'unreachable' | 'checking'>>({});
@@ -299,7 +299,7 @@ export function McpDefaultsSettings({ config }: McpDefaultsSettingsProps) {
     }, () => setAgentCheck((c) => ({ ...c, [key]: 'unreachable' })));
   };
   const saveAgentToken = async (id: string, project: string, agentId: string, token: string) => {
-    if (!token.trim()) return; // vuoto non tocca nulla: si cancella solo con Cancella
+    if (!token.trim()) return; // an empty field touches nothing: only Clear deletes
     try {
       const res = await window.cth.mcpRemoteAgentSetToken(id, project, agentId, token);
       if (!res.ok) throw new Error(res.error);
@@ -321,8 +321,8 @@ export function McpDefaultsSettings({ config }: McpDefaultsSettingsProps) {
     void Promise.all(rows.map(([id, project, agentId]) =>
       window.cth.mcpRemoteAgentHasToken(id, project, agentId))).then(
       (values) => {
-        // Si riparte dalla fotografia del server: chi non c'e' piu' non resta
-        // «impostato» per memoria del renderer.
+        // Start again from the server's snapshot: an agent that is gone does not
+        // stay "set" because the renderer remembers it.
         setAgentHasToken(Object.fromEntries(rows.map(([id, p, a], i) => [agentKey(id, p, a), values[i]])));
         setAgentCheck({});
       }, () => undefined);
