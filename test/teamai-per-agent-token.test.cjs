@@ -169,3 +169,53 @@ test('the settings panel offers a personal token per agent and all locales have 
     assert.ok(flat.includes('remoteAgentUsesProject'), `${file} says the project token is used`);
   }
 });
+
+// ─── Giro 2: le note di Gideon ────────────────────────────────────────────────
+
+test('the agent secret ref validates the project too', () => {
+  // N1: l'isolamento non deve dipendere da un controllo fatto altrove.
+  assert.equal(remoteAgentSecretRef('teamai', 'p:x', 'b'), undefined);
+  assert.equal(remoteAgentSecretRef('teamai', 'constructor', 'b'), undefined);
+  assert.equal(remoteAgentSecretRef('teamai', '', 'b'), undefined);
+  assert.equal(remoteAgentSecretRef('teamai', 'BURD', 'b'), 'mcp:teamai:BURD:b');
+});
+
+test('the panel reloads the agent state when the agent list changes', () => {
+  // N3: senza gli agentId nella chiave, togliere e rimettere un agente lascia
+  // «impostato» un token che la pulizia ha cancellato.
+  const { agentTokenRowsKey } = loadTs('src/shared/mcpAgentTokenRows.ts');
+  const one = { teamai: { projects: { BURD: { agents: ['agent-a'] } } } };
+  const removed = { teamai: { projects: { BURD: { agents: [] } } } };
+  const readded = { teamai: { projects: { BURD: { agents: ['agent-a'] } } } };
+  const other = { teamai: { projects: { BURD: { agents: ['agent-b'] } } } };
+  assert.notEqual(agentTokenRowsKey(one), agentTokenRowsKey(removed));
+  assert.notEqual(agentTokenRowsKey(one), agentTokenRowsKey(other));
+  assert.equal(agentTokenRowsKey(one), agentTokenRowsKey(readded));
+  assert.equal(agentTokenRowsKey(undefined), '');
+  const panel = fs.readFileSync(
+    path.join(__dirname, '../src/renderer/src/components/McpDefaultsSettings.tsx'), 'utf8');
+  assert.ok(/agentTokenRowsKey/.test(panel), 'the panel keys the reload on the agent list');
+});
+
+test('the cleanup removes orphan agent secrets of a project', () => {
+  // N2, ramo scelto: il portachiavi sa elencare i riferimenti, quindi gli orfani
+  // (agente non piu' in lista, segreto rimasto) si cancellano.
+  const { secrets, deps } = store([
+    ['mcp:teamai:BURD', FAKE_PROJECT_TOKEN],
+    ['mcp:teamai:BURD:agent-a', FAKE_AGENT_TOKEN],
+    ['mcp:teamai:BURD:ghost', FAKE_AGENT_TOKEN_B],
+    ['mcp:teamai:SHOP:ghost', FAKE_AGENT_TOKEN_B]]);
+  const ops = createRemoteTokenOps({ ...deps, listRefs: () => Array.from(secrets.keys()) });
+  const removed = ops.pruneOrphans('teamai', 'BURD', ['agent-a']);
+  assert.deepEqual(removed.sort(), ['ghost']);
+  assert.equal(secrets.has('mcp:teamai:BURD:ghost'), false);
+  assert.equal(secrets.has('mcp:teamai:BURD:agent-a'), true);
+  assert.equal(secrets.has('mcp:teamai:BURD'), true, 'il token del progetto resta');
+  assert.equal(secrets.has('mcp:teamai:SHOP:ghost'), true, 'un altro progetto non si tocca');
+});
+
+test('without a listing capability the cleanup reports it instead of guessing', () => {
+  const { deps } = store([['mcp:teamai:BURD:ghost', FAKE_AGENT_TOKEN]]);
+  const ops = createRemoteTokenOps(deps);
+  assert.deepEqual(ops.pruneOrphans('teamai', 'BURD', []), []);
+});
