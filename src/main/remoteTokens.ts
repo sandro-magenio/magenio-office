@@ -105,7 +105,9 @@ export function createRemoteTokenOps(deps: RemoteTokenDeps) {
      *  perche' la configurazione e' stata scritta senza passare di qui. Il token
      *  del progetto (due segmenti) e gli altri progetti non si toccano. */
     pruneOrphans(id: string, project: string, keep: readonly string[]): string[] {
-      if (!deps.listRefs || !isN8nProjectKey(project)) return [];
+      // Stessa guardia di `remoteSecretRef(id, project)`: se il connettore o il
+      // progetto non sono validi il riferimento non esiste, e non si cancella nulla.
+      if (!deps.listRefs || !ref(id, project)) return [];
       const prefix = `mcp:${id}:${project}:`;
       const kept = new Set(keep);
       const removed: string[] = [];
@@ -116,7 +118,7 @@ export function createRemoteTokenOps(deps: RemoteTokenDeps) {
         const agentId = secretRef.slice(prefix.length);
         if (kept.has(agentId) || !isN8nProjectKey(agentId)) continue;
         try { if (deps.deleteSecret(secretRef)) removed.push(agentId); }
-        catch { /* resta orfano: lo si ritenta al prossimo avvio */ }
+        catch { /* resta orfano: lo si ritenta al prossimo salvataggio */ }
       }
       return removed;
     }
