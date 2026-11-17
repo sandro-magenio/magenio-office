@@ -1487,6 +1487,15 @@ const api = {
     ipcRenderer.invoke('mcp:remoteHasToken', id, project),
   mcpRemoteTestToken: (id: string, project: string): Promise<'missing' | 'valid' | 'invalid' | 'unreachable'> =>
     ipcRenderer.invoke('mcp:remoteTestToken', id, project),
+  // T100: one agent's own token. State only crosses the bridge, never the bearer.
+  mcpRemoteAgentSetToken: (id: string, project: string, agentId: string, token: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('mcp:remoteAgentSetToken', { id, project, agentId, token }),
+  mcpRemoteAgentClearToken: (id: string, project: string, agentId: string): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke('mcp:remoteAgentClearToken', id, project, agentId),
+  mcpRemoteAgentHasToken: (id: string, project: string, agentId: string): Promise<boolean> =>
+    ipcRenderer.invoke('mcp:remoteAgentHasToken', id, project, agentId),
+  mcpRemoteAgentTestToken: (id: string, project: string, agentId: string): Promise<'missing' | 'valid' | 'invalid' | 'unreachable'> =>
+    ipcRenderer.invoke('mcp:remoteAgentTestToken', id, project, agentId),
   mcpPresence: (id: string): Promise<{ ok: boolean; reason?: string; detail?: string; installDest?: string }> =>
     ipcRenderer.invoke('mcp:presence', { id }),
   /** Clone + build a user-configured MCP server. The destination is chosen by
