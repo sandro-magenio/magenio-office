@@ -4176,6 +4176,7 @@ const remoteTokens = createRemoteTokenOps({
   deleteSecret: integrations.deleteSecret,
   hasSecret: integrations.hasSecret,
   getSecret: integrations.getSecret,
+  listRefs: integrations.listSecretRefs,
   urlFor: (id, project) => {
     const projects = readConfig().mcpDefaults?.[id]?.projects;
     return Object.prototype.hasOwnProperty.call(projects ?? {}, project) ? projects![project].url : undefined;
@@ -4217,8 +4218,13 @@ function pruneRemoteAgentTokens(
       const stillThere = Object.prototype.hasOwnProperty.call(after?.[id]?.projects ?? {}, project);
       const nextAgents = stillThere ? (after![id].projects![project].agents ?? []) : [];
       const removed = remoteTokens.pruneAgents(id, project, previous?.agents ?? [], nextAgents);
-      if (removed.length) {
-        console.log('[teamai] token personali rimossi per', id, project, ':', removed.length);
+      // Orfani: segreti per agente di questo progetto il cui agente non e' nella
+      // lista attuale (una cancellazione fallita, o una configurazione scritta a
+      // mano). Senza valori e senza segreti: solo quanti e per quale progetto.
+      const orphans = remoteTokens.pruneOrphans(id, project, nextAgents);
+      if (removed.length || orphans.length) {
+        console.log('[teamai] token personali rimossi per', id, project,
+          '- agenti:', removed.length, 'orfani:', orphans.length);
       }
     }
   }

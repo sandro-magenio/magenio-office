@@ -3,6 +3,7 @@ import { useStore } from '@/store/store';
 import { jiraProjectsClient } from '@/jiraProjects/jiraProjectsClient';
 import { useTranslation } from 'react-i18next';
 import type { HarnessConfig } from '@/store/config';
+import { agentTokenRowsKey } from '../../../shared/mcpAgentTokenRows';
 import { MCP_CATALOG, createConsentWriter, n8nProjectOps, removeN8nProjectFlow, normalizeRemoteUrl, isN8nProjectKey, type McpTier, type N8nProjectEntry } from '@shared/mcpCatalog';
 import { canInstallMcp } from './mcpInstallRule';
 
@@ -202,6 +203,9 @@ export function McpDefaultsSettings({ config }: McpDefaultsSettingsProps) {
   const remoteRows = MCP_CATALOG.filter((e) => e.remote).flatMap((e) =>
     Object.keys(remoteProjects(e.id)).sort().map((project) => [e.id, project] as const));
   const remoteRowsKey = remoteRows.map(([id, project]) => remoteKey(id, project)).join('\n');
+  // T100/N3: gli agenti fanno parte della chiave: se uno esce dalla lista il suo
+  // segreto viene cancellato e lo stato «impostato» va ricaricato, non ricordato.
+  const agentRowsKey = agentTokenRowsKey(config.mcpDefaults);
   const [remoteHasToken, setRemoteHasToken] = useState<Record<string, boolean>>({});
   const [remoteNewProject, setRemoteNewProject] = useState<Record<string, string>>({});
   const [remoteNewAgents, setRemoteNewAgents] = useState<Record<string, string[]>>({});
@@ -317,9 +321,12 @@ export function McpDefaultsSettings({ config }: McpDefaultsSettingsProps) {
     void Promise.all(rows.map(([id, project, agentId]) =>
       window.cth.mcpRemoteAgentHasToken(id, project, agentId))).then(
       (values) => {
+        // Si riparte dalla fotografia del server: chi non c'e' piu' non resta
+        // «impostato» per memoria del renderer.
         setAgentHasToken(Object.fromEntries(rows.map(([id, p, a], i) => [agentKey(id, p, a), values[i]])));
+        setAgentCheck({});
       }, () => undefined);
-  }, [remoteRowsKey]);
+  }, [remoteRowsKey, agentRowsKey]);
   const tokenBadge = (id: string, project: string): string => {
     const key = remoteKey(id, project);
     const c = remoteCheck[key] ?? (remoteHasToken[key] ? 'checking' : 'missing');

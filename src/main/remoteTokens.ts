@@ -10,6 +10,9 @@ export interface RemoteTokenDeps {
   getSecret: (ref: string) => string | undefined;
   urlFor: (id: string, project: string) => string | undefined;
   checkToken: (url: string, token: string) => Promise<N8nTokenCheck>;
+  /** I nomi dei segreti presenti (mai i valori). Senza, gli orfani non si possono
+   *  trovare: `pruneOrphans` allora restituisce una lista vuota e non inventa. */
+  listRefs?: () => string[];
 }
 
 export function createRemoteTokenOps(deps: RemoteTokenDeps) {
@@ -94,6 +97,26 @@ export function createRemoteTokenOps(deps: RemoteTokenDeps) {
         if (!secretRef) continue;
         try { if (deps.deleteSecret(secretRef)) removed.push(agentId); }
         catch { /* un segreto che non si cancella si ritenta al prossimo cambio */ }
+      }
+      return removed;
+    },
+    /** Cancella i segreti per agente il cui `agentId` non e' nella lista attuale:
+     *  gli orfani, cioe' quelli rimasti perche' una cancellazione e' fallita o
+     *  perche' la configurazione e' stata scritta senza passare di qui. Il token
+     *  del progetto (due segmenti) e gli altri progetti non si toccano. */
+    pruneOrphans(id: string, project: string, keep: readonly string[]): string[] {
+      if (!deps.listRefs || !isN8nProjectKey(project)) return [];
+      const prefix = `mcp:${id}:${project}:`;
+      const kept = new Set(keep);
+      const removed: string[] = [];
+      let refs: string[];
+      try { refs = deps.listRefs(); } catch { return []; }
+      for (const secretRef of refs) {
+        if (!secretRef.startsWith(prefix)) continue;
+        const agentId = secretRef.slice(prefix.length);
+        if (kept.has(agentId) || !isN8nProjectKey(agentId)) continue;
+        try { if (deps.deleteSecret(secretRef)) removed.push(agentId); }
+        catch { /* resta orfano: lo si ritenta al prossimo avvio */ }
       }
       return removed;
     }

@@ -167,6 +167,12 @@ export function setSecret(secretRef: string, plaintext: string): { ok: boolean; 
   }
 }
 
+/** The stored secret REFERENCES (names, never values). Main-internal: lets the
+ *  caller remove a secret that no longer belongs to anything. */
+export function listSecretRefs(): string[] {
+  try { return Object.keys(readSecretBlob()); } catch { return []; }
+}
+
 /** Decrypt a secret. MAIN-INTERNAL ONLY — never expose this over IPC. Returns
  *  undefined if absent or undecryptable (the broker maps that to 503 no_secret). */
 export function getSecret(secretRef: string | undefined): string | undefined {

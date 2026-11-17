@@ -105,6 +105,9 @@ export const remoteSecretRef = (id: string, project: string): string | undefined
  *  project key (no separators, no Object.prototype names), so the ref stays
  *  unambiguous and cannot address another agent's or project's secret. */
 export const remoteAgentSecretRef = (id: string, project: string, agentId: unknown): string | undefined => {
+  // Il progetto va validato QUI: l'isolamento non deve dipendere da un controllo
+  // fatto dal chiamante. Senza, `p:x` produrrebbe un riferimento a quattro segmenti.
+  if (!isN8nProjectKey(project)) return undefined;
   const base = remoteSecretRef(id, project);
   return base && isN8nProjectKey(agentId) ? `${base}:${agentId}` : undefined;
 };
