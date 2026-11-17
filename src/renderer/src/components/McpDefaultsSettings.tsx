@@ -3,6 +3,7 @@ import { useStore } from '@/store/store';
 import { jiraProjectsClient } from '@/jiraProjects/jiraProjectsClient';
 import { useTranslation } from 'react-i18next';
 import type { HarnessConfig } from '@/store/config';
+import { agentTokenRowsKey } from '../../../shared/mcpAgentTokenRows';
 import { MCP_CATALOG, createConsentWriter, n8nProjectOps, removeN8nProjectFlow, normalizeRemoteUrl, isN8nProjectKey, type McpTier, type N8nProjectEntry } from '@shared/mcpCatalog';
 import { canInstallMcp } from './mcpInstallRule';
 
@@ -202,6 +203,9 @@ export function McpDefaultsSettings({ config }: McpDefaultsSettingsProps) {
   const remoteRows = MCP_CATALOG.filter((e) => e.remote).flatMap((e) =>
     Object.keys(remoteProjects(e.id)).sort().map((project) => [e.id, project] as const));
   const remoteRowsKey = remoteRows.map(([id, project]) => remoteKey(id, project)).join('\n');
+  // The agents are part of the key: when one leaves the list its secret is
+  // deleted and the "set" state must be reloaded, not remembered.
+  const agentRowsKey = agentTokenRowsKey(config.mcpDefaults);
   const [remoteHasToken, setRemoteHasToken] = useState<Record<string, boolean>>({});
   const [remoteNewProject, setRemoteNewProject] = useState<Record<string, string>>({});
   const [remoteNewAgents, setRemoteNewAgents] = useState<Record<string, string[]>>({});
@@ -282,11 +286,54 @@ export function McpDefaultsSettings({ config }: McpDefaultsSettingsProps) {
       fail();
     }
   };
+  // ─── One agent's own token ─────────────────────────────────────────────
+  // Only state crosses the IPC bridge: the saved value is never read back.
+  const agentKey = (id: string, project: string, agentId: string) => `${id}:${project}:${agentId}`;
+  const [agentHasToken, setAgentHasToken] = useState<Record<string, boolean>>({});
+  const [agentCheck, setAgentCheck] = useState<Record<string, 'missing' | 'valid' | 'invalid' | 'unreachable' | 'checking'>>({});
+  const checkAgentToken = (id: string, project: string, agentId: string) => {
+    const key = agentKey(id, project, agentId);
+    setAgentCheck((c) => ({ ...c, [key]: 'checking' }));
+    window.cth.mcpRemoteAgentTestToken(id, project, agentId).then((value) => {
+      setAgentCheck((c) => ({ ...c, [key]: value }));
+    }, () => setAgentCheck((c) => ({ ...c, [key]: 'unreachable' })));
+  };
+  const saveAgentToken = async (id: string, project: string, agentId: string, token: string) => {
+    if (!token.trim()) return; // an empty field touches nothing: only Clear deletes
+    try {
+      const res = await window.cth.mcpRemoteAgentSetToken(id, project, agentId, token);
+      if (!res.ok) throw new Error(res.error);
+      setAgentHasToken((h) => ({ ...h, [agentKey(id, project, agentId)]: true }));
+      checkAgentToken(id, project, agentId);
+    } catch { fail(); }
+  };
+  const clearAgentToken = async (id: string, project: string, agentId: string) => {
+    try {
+      if (!(await window.cth.mcpRemoteAgentClearToken(id, project, agentId)).ok) throw new Error('not cleared');
+      setAgentHasToken((h) => ({ ...h, [agentKey(id, project, agentId)]: false }));
+      setAgentCheck((c) => ({ ...c, [agentKey(id, project, agentId)]: 'missing' }));
+    } catch { fail(); }
+  };
+  useEffect(() => {
+    const rows = MCP_CATALOG.filter((e) => e.remote).flatMap((e) =>
+      Object.entries(config.mcpDefaults?.[e.id]?.projects ?? {}).flatMap(([project, pe]) =>
+        (pe.agents ?? []).map((agentId) => [e.id, project, agentId] as const)));
+    void Promise.all(rows.map(([id, project, agentId]) =>
+      window.cth.mcpRemoteAgentHasToken(id, project, agentId))).then(
+      (values) => {
+        // Start again from the server's snapshot: an agent that is gone does not
+        // stay "set" because the renderer remembers it.
+        setAgentHasToken(Object.fromEntries(rows.map(([id, p, a], i) => [agentKey(id, p, a), values[i]])));
+        setAgentCheck({});
+      }, () => undefined);
+  }, [remoteRowsKey, agentRowsKey]);
   const tokenBadge = (id: string, project: string): string => {
     const key = remoteKey(id, project);
     const c = remoteCheck[key] ?? (remoteHasToken[key] ? 'checking' : 'missing');
     return t({ missing: 'mcpDefaults.n8nTokenBadgeMissing', valid: 'mcpDefaults.n8nTokenValid', invalid: 'mcpDefaults.n8nTokenInvalid', unreachable: id === 'n8n' ? 'mcpDefaults.n8nTokenUnreachable' : 'mcpDefaults.remoteTokenUnreachable', checking: 'mcpDefaults.n8nTokenChecking' }[c], { name: MCP_CATALOG.find((e) => e.id === id)?.label ?? id });
   };
+  const tokenBadgeFor = (state: 'missing' | 'valid' | 'invalid' | 'unreachable' | 'checking', label: string): string =>
+    t({ missing: 'mcpDefaults.n8nTokenBadgeMissing', valid: 'mcpDefaults.n8nTokenValid', invalid: 'mcpDefaults.n8nTokenInvalid', unreachable: 'mcpDefaults.remoteTokenUnreachable', checking: 'mcpDefaults.n8nTokenChecking' }[state], { name: label });
   const addRemoteProject = async (id: string) => {
     const project = (remoteNewProject[id] ?? '').trim();
     if (!isN8nProjectKey(project) || Object.prototype.hasOwnProperty.call(remoteProjects(id), project)) { fail(); return; }
@@ -522,6 +569,44 @@ export function McpDefaultsSettings({ config }: McpDefaultsSettingsProps) {
                               <label style={labelStyle}>{t('mcpDefaults.agents')}</label>
                               <N8nAgentPicker project={project} value={pe.agents ?? []} onChange={(v) => { void patchRemoteProject(entry.id, project, { agents: v }); }} />
                               <span style={{ fontSize: 11, color: 'var(--cth-ink-500)' }}>{t('mcpDefaults.remoteAgentsHint', { name: entry.label })}</span>
+                              {(pe.agents ?? []).map((agentId) => {
+                                const key = agentKey(entry.id, project, agentId);
+                                const has = agentHasToken[key] ?? false;
+                                const state = agentCheck[key] ?? (has ? 'checking' : 'missing');
+                                return (
+                                  <div key={agentId} role="group" aria-label={t('mcpDefaults.remoteAgentToken') + ' ' + agentId}
+                                    style={{ display: 'flex', flexDirection: 'column', gap: 2, padding: '4px 8px', boxShadow: 'inset 0 0 0 1px var(--cth-ink-100)' }}>
+                                    <label style={labelStyle}>{t('mcpDefaults.remoteAgentToken')} · {agentId}</label>
+                                    <input
+                                      type="password"
+                                      aria-label={t('mcpDefaults.remoteAgentToken') + ' ' + agentId}
+                                      placeholder={t('mcpDefaults.n8nTokenPlaceholder')}
+                                      onBlur={(ev) => {
+                                        const value = ev.currentTarget.value;
+                                        ev.currentTarget.value = '';
+                                        void saveAgentToken(entry.id, project, agentId, value);
+                                      }}
+                                      style={{ width: '100%', padding: '6px 8px', background: 'var(--cth-paper-100)', border: 'none', boxShadow: 'inset 0 0 0 1px var(--cth-ink-100)', fontSize: 12, color: 'var(--cth-ink-900)' }}
+                                    />
+                                    <span style={{ fontSize: 11, color: 'var(--cth-ink-500)' }}>
+                                      {has ? t('mcpDefaults.remoteAgentTokenSet') : t('mcpDefaults.remoteAgentUsesProject')}
+                                    </span>
+                                    <span style={{ fontSize: 11, color: 'var(--cth-ink-500)' }}>
+                                      {has ? tokenBadgeFor(state, entry.label) : t('mcpDefaults.remoteAgentTokenHint')}
+                                    </span>
+                                    {has && (
+                                      <div style={{ display: 'flex', gap: 6 }}>
+                                        <button type="button" onClick={() => { checkAgentToken(entry.id, project, agentId); }} disabled={state === 'checking'} style={{ alignSelf: 'flex-start', padding: '3px 10px 1px', background: 'var(--cth-paper-100)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-700)', border: 'none', fontFamily: 'var(--cth-font-display)', fontSize: 8, lineHeight: '14px', color: 'var(--cth-ink-900)', cursor: 'pointer', textTransform: 'uppercase' }}>
+                                          {t('mcpDefaults.n8nTokenVerify')}
+                                        </button>
+                                        <button type="button" onClick={() => { void clearAgentToken(entry.id, project, agentId); }} style={{ alignSelf: 'flex-start', padding: '3px 10px 1px', background: 'var(--cth-paper-100)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-700)', border: 'none', fontFamily: 'var(--cth-font-display)', fontSize: 8, lineHeight: '14px', color: 'var(--cth-ink-900)', cursor: 'pointer', textTransform: 'uppercase' }}>
+                                          {t('mcpDefaults.n8nTokenClear')}
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
                               <button type="button" onClick={() => { void (entry.id === 'n8n' ? removeN8nProject(project) : removeRemoteProject(entry.id, project)); }} style={{ alignSelf: 'flex-start', padding: '3px 10px 1px', background: 'var(--cth-paper-100)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-700)', border: 'none', fontFamily: 'var(--cth-font-display)', fontSize: 8, lineHeight: '14px', color: 'var(--cth-ink-900)', cursor: 'pointer', textTransform: 'uppercase' }}>
                                 {t('mcpDefaults.n8nProjectRemove')}
                               </button>

@@ -100,6 +100,17 @@ export interface N8nProjectEntry {
  *  the integrations' `int:<id>` secrets, but a distinct namespace). */
 export const remoteSecretRef = (id: string, project: string): string | undefined =>
   remoteBrokerEnv(id) ? `mcp:${id}:${project}` : undefined;
+/** Secret-store handle of ONE agent's own token for a remote project:
+ *  `mcp:<id>:<project>:<agentId>`. `agentId` passes the same strict check as a
+ *  project key (no separators, no Object.prototype names), so the ref stays
+ *  unambiguous and cannot address another agent's or project's secret. */
+export const remoteAgentSecretRef = (id: string, project: string, agentId: unknown): string | undefined => {
+  // The project is validated HERE: the isolation must not depend on a check made
+  // by the caller. Without it `p:x` would build a four-segment reference.
+  if (!isN8nProjectKey(project)) return undefined;
+  const base = remoteSecretRef(id, project);
+  return base && isN8nProjectKey(agentId) ? `${base}:${agentId}` : undefined;
+};
 export const n8nSecretRef = (project: string): string => remoteSecretRef('n8n', project)!;
 /** Outcome of a live token check against the project's n8n MCP endpoint. */
 export type N8nTokenCheck = 'valid' | 'invalid' | 'unreachable';

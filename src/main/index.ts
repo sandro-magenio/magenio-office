@@ -45,7 +45,7 @@ import { MemoryManager } from './memory';
 import { KnowledgeManager } from './knowledge';
 import { n8nSpawnGrant, remoteSpawnGrant } from './n8nGrant';
 import { MCP_CATALOG, n8nSecretRef, N8N_LEGACY_SECRET_REF, N8N_BROKER_TOKEN_ENV, isN8nProjectKey, resolveN8nProject, resolveRemoteProject, remoteSecretRef, remoteBrokerEnv, runN8nMigration, normalizeN8nUrl } from '../shared/mcpCatalog';
-import { createRemoteTokenOps } from './remoteTokens';
+import { createAgentTokenResolver, createRemoteTokenOps } from './remoteTokens';
 import { vaultScopesFor, type VaultMount } from '../shared/vaultMount';
 import { resolveProjectForCwd, runVaultSync, type VaultSyncResult } from './knowledgeVaultSync';
 import { MemoryReflector, type ReflectSettings } from './reflect';
@@ -498,6 +498,9 @@ const remoteGrantFor = (id: string, project: string | undefined, agentId: string
  *  granted a per-worker capability token at spawn (revoked in teardownPty). */
 /** Resolves when the first integrationBroker.start() settles (spawns wait on it). */
 let brokerStarted: Promise<unknown> = Promise.resolve();
+/** Which token an already-enabled agent carries: its own when it has one, the
+ *  project's otherwise. The choice lives in remoteTokens.ts, where the tests see it. */
+const agentTokenFor = createAgentTokenResolver({ getSecret: integrations.getSecret });
 const integrationBroker = new IntegrationBroker({
   // Writable Jira scope of a PM: the projects whose binding lists this agent
   // EXPLICITLY (an empty `agents` means "all agents" for polling, not a write grant).
@@ -510,10 +513,12 @@ const integrationBroker = new IntegrationBroker({
     const token = up && integrations.getSecret(n8nSecretRef(project));
     return up && token ? { url: up.url, token } : undefined;
   },
+  // The agent is already enabled by resolveRemoteProject (unchanged, fail
+  // closed); here we only choose WHICH token it carries: its own when it has one,
+  // the project's otherwise. The broker still says who is calling.
   remoteUpstream: (id, agentId, project) => {
     const up = resolveRemoteProject(id, readConfig().mcpDefaults?.[id], project, agentId);
-    const ref = remoteSecretRef(id, project);
-    const token = up && ref && integrations.getSecret(ref);
+    const token = up ? agentTokenFor(id, project, agentId) : undefined;
     return up && token ? { url: up.url, token } : undefined;
   },
   getJiraBindings: () => ({
@@ -4171,6 +4176,7 @@ const remoteTokens = createRemoteTokenOps({
   deleteSecret: integrations.deleteSecret,
   hasSecret: integrations.hasSecret,
   getSecret: integrations.getSecret,
+  listRefs: integrations.listSecretRefs,
   urlFor: (id, project) => {
     const projects = readConfig().mcpDefaults?.[id]?.projects;
     return Object.prototype.hasOwnProperty.call(projects ?? {}, project) ? projects![project].url : undefined;
@@ -4187,6 +4193,42 @@ ipcMain.handle('mcp:remoteHasToken', (_evt, id: unknown, project: unknown) =>
   remoteTokens.has(String(id ?? ''), String(project ?? '')));
 ipcMain.handle('mcp:remoteTestToken', (_evt, id: unknown, project: unknown) =>
   remoteTokens.test(String(id ?? ''), String(project ?? '')));
+// The same four operations, scoped to ONE agent. Only state crosses the IPC
+// boundary (ok/boolean/check outcome): a bearer never does.
+ipcMain.handle('mcp:remoteAgentSetToken', (_evt, payload: unknown) => {
+  const p = (payload ?? {}) as { id?: unknown; project?: unknown; agentId?: unknown; token?: unknown };
+  return remoteTokens.setFor(String(p.id ?? ''), String(p.project ?? ''), String(p.agentId ?? ''),
+    String(p.token ?? ''));
+});
+ipcMain.handle('mcp:remoteAgentClearToken', (_evt, id: unknown, project: unknown, agentId: unknown) =>
+  remoteTokens.clearFor(String(id ?? ''), String(project ?? ''), String(agentId ?? '')));
+ipcMain.handle('mcp:remoteAgentHasToken', (_evt, id: unknown, project: unknown, agentId: unknown) =>
+  remoteTokens.hasFor(String(id ?? ''), String(project ?? ''), String(agentId ?? '')));
+ipcMain.handle('mcp:remoteAgentTestToken', (_evt, id: unknown, project: unknown, agentId: unknown) =>
+  remoteTokens.testFor(String(id ?? ''), String(project ?? ''), String(agentId ?? '')));
+
+/** Deletes the per-agent secrets of agents no longer listed. The project token
+ *  stays: it is the fallback for every agent that has none of its own. */
+function pruneRemoteAgentTokens(
+  before: HarnessConfig['mcpDefaults'],
+  after: HarnessConfig['mcpDefaults']
+): void {
+  for (const [id, entry] of Object.entries(before ?? {})) {
+    for (const [project, previous] of Object.entries(entry?.projects ?? {})) {
+      const stillThere = Object.prototype.hasOwnProperty.call(after?.[id]?.projects ?? {}, project);
+      const nextAgents = stillThere ? (after![id].projects![project].agents ?? []) : [];
+      const removed = remoteTokens.pruneAgents(id, project, previous?.agents ?? [], nextAgents);
+      // Orphans: per-agent secrets of this project whose agent is no longer
+      // listed (a deletion that failed, or a config written by hand). No values
+      // and no secrets in the log: only how many, and for which project.
+      const orphans = remoteTokens.pruneOrphans(id, project, nextAgents);
+      if (removed.length || orphans.length) {
+        console.log('[teamai] per-agent tokens removed for', id, project,
+          '- agents:', removed.length, 'orphans:', orphans.length);
+      }
+    }
+  }
+}
 
 /** Startup migration: the single global n8n endpoint becomes one entry per project
  *  (agents placed by their registry project; unplaced agents are dropped), and the
@@ -4242,7 +4284,11 @@ ipcMain.handle('config:update', (_evt, patch: Partial<HarnessConfig>) => {
   // hive/jira-map.json migration (migrateJiraProjectsV1 in config.ts) all call
   // writeConfig/persistConfig directly, bypassing this IPC handler entirely.
   const { jiraProjects: _ignoredJiraProjects, ...safePatch } = patch;
+  const consentBefore = readConfig().mcpDefaults;
   let next = writeConfig(safePatch);
+  // An agent leaving the list, or a project losing its connector, must not leave
+  // its own token behind in the secret store.
+  pruneRemoteAgentTokens(consentBefore, next.mcpDefaults);
   // The jira-poll mission's own `intervalMs` (seeded once by
   // ensureDefaultMissions) is a separate field from jiraPoll.pollIntervalMs —
   // the Settings UI only ever patches the latter, so without this the poll
