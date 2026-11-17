@@ -219,3 +219,17 @@ test('without a listing capability the cleanup reports it instead of guessing', 
   const ops = createRemoteTokenOps(deps);
   assert.deepEqual(ops.pruneOrphans('teamai', 'BURD', []), []);
 });
+
+test('an invalid connector id makes the orphan cleanup do nothing', () => {
+  // Giro 3: stessa guardia di remoteSecretRef(id, project). Un id costruito ad
+  // arte non deve cancellare niente, nemmeno se il prefisso combacia.
+  const { secrets, deps } = store([
+    ['mcp:teamai:p:BURD:ghost', FAKE_AGENT_TOKEN],
+    ['mcp:teamai:BURD:ghost', FAKE_AGENT_TOKEN_B]]);
+  const ops = createRemoteTokenOps({ ...deps, listRefs: () => Array.from(secrets.keys()) });
+  assert.deepEqual(ops.pruneOrphans('teamai:p', 'BURD', []), []);
+  assert.equal(secrets.has('mcp:teamai:p:BURD:ghost'), true);
+  assert.equal(secrets.has('mcp:teamai:BURD:ghost'), true);
+  // e l'id buono continua a funzionare
+  assert.deepEqual(ops.pruneOrphans('teamai', 'BURD', []).sort(), ['ghost']);
+});
