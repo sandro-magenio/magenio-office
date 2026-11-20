@@ -1,9 +1,9 @@
 /**
- * T139 g3 · L'istruzione che arriva a god, e la scelta che la rende sicura.
+ * T139 g3 · The instruction that reaches god, and the choice that makes it safe.
  *
- * Per una richiesta umana l'istruzione è preambolo + testo. Per una notifica da un bot il preambolo
- * **contiene già** il testo fra i delimitatori: riaccodarlo lo farebbe rientrare fuori dai delimitatori,
- * dove sembrerebbe una istruzione. Qui la regola sta in una funzione pura, così vale in ogni punto.
+ * For a human request the instruction is preamble + text. For a bot notice the preamble already
+ * **contains** the text between the delimiters: appending it again would put it back outside them,
+ * where it would read as an instruction. The rule lives in a pure function, so it holds everywhere.
  */
 
 export interface GodInstructionInput {
@@ -14,7 +14,7 @@ export interface GodInstructionInput {
 
 export function buildGodInstruction(input: GodInstructionInput): string | undefined {
   if (!input.autonomyPreamble) return undefined;
-  // Il testo del bot è già dentro il preambolo, fra i delimitatori: non si riaccoda.
+  // The bot text is already inside the preamble, between the delimiters: it is not appended again.
   if (input.fromTrustedBot) return input.autonomyPreamble;
   return `${input.autonomyPreamble}${input.text}`;
 }
@@ -40,8 +40,8 @@ export interface SlackIpcInput {
 }
 
 /**
- * Il messaggio che il main manda al renderer. `text` resta per il titolo e la descrizione della
- * scheda; la provenienza viaggia come campo strutturato, non come frase nel testo.
+ * The message main sends to the renderer. `text` stays for the card title and description; the
+ * provenance travels as a structured field, not as a sentence inside the text.
  */
 export function buildSlackIpcMessage(input: SlackIpcInput): SlackIpcMessage {
   const msg: SlackIpcMessage = {

@@ -80,7 +80,7 @@ export interface SlackWebhookServerOptions {
  *  never see it. */
 export interface SlackInboundMessage {
   text: string;
-  /** Valorizzato quando il messaggio arriva da un bot fidato (il suo bot_id). */
+  /** Set when the message comes from a trusted bot (its bot_id). */
   fromTrustedBot?: string;
   channel: string;
   ts: string;
@@ -111,7 +111,7 @@ export class SlackWebhookServer {
   private readonly trustedBots: Array<{ botId: string; channel: string }>;
   /** Shared mention filter + dedup + forward path (also used by Socket Mode). */
   private readonly dispatcher: { dispatch(payload: unknown): boolean; setAppBotId?(id: string | null): void };
-  /** Il bot dell'app, da `auth.test`: serve all'anti-loop dei bot fidati. */
+  /** The app bot, from `auth.test`: the trusted-bot anti-loop needs it. */
   setAppBotId(id: string | null): void {
     this.dispatcher.setAppBotId?.(id);
   }
@@ -270,10 +270,10 @@ export class SlackWebhookServer {
  */
 export class SlackSocketServer {
   private readonly client: { start(): Promise<{ ok: boolean; error?: string }>; stop(): void; readonly connected: boolean };
-  /** Tenuto per poter dire al filtro il bot dell'app quando `auth.test` risponde. */
+  /** Kept so the filter can be told the app bot when `auth.test` answers. */
   private dispatcher: { dispatch(payload: unknown): boolean; setAppBotId?(id: string | null): void };
 
-  /** Il bot dell'app, da `auth.test`. */
+  /** The app bot, from `auth.test`. */
   setAppBotId(id: string | null): void {
     this.dispatcher.setAppBotId?.(id);
   }

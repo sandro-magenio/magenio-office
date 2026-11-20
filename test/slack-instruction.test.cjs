@@ -1,6 +1,6 @@
 /**
- * T139 g3 · Il testo del bot non deve rientrare dai delimitatori, e il messaggio IPC deve
- * trasportare la provenienza come dato.
+ * T139 g3 · The bot text must not come back in from outside the delimiters, and the IPC message
+ * must carry the provenance as data.
  */
 const test = require('node:test');
 const assert = require('node:assert');
@@ -9,59 +9,59 @@ const os = require('node:os');
 const path = require('node:path');
 const ts = require('typescript');
 
-function carica(relativo) {
-  const uscita = fs.mkdtempSync(path.join(os.tmpdir(), 't139-ins-'));
-  const compilato = path.join(uscita, 'm.js');
-  fs.writeFileSync(compilato, ts.transpileModule(
-    fs.readFileSync(path.join(__dirname, '..', src(relativo)), 'utf8'),
+function load(relative) {
+  const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 't139-ins-'));
+  const compiled = path.join(outDir, 'm.js');
+  fs.writeFileSync(compiled, ts.transpileModule(
+    fs.readFileSync(path.join(__dirname, '..', src(relative)), 'utf8'),
     { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText);
-  return require(compilato);
+  return require(compiled);
 }
 const src = (r) => r;
-const precisa = carica('src/shared/slackInstruction.ts');
-const preambolo = carica('src/shared/slackPreamble.ts');
+const precise = load('src/shared/slackInstruction.ts');
+const preambleModule = load('src/shared/slackPreamble.ts');
 
-const TESTO_BOT = 'Critical PHP security release, aggiornare 8.4.28';
+const BOT_TEXT = 'Critical PHP security release, upgrade to 8.4.28';
 
-test('notifica da un bot: l\'istruzione è solo il preambolo, e il testo compare una volta', () => {
-  const autonomyPreamble = preambolo.buildTrustedBotNoticeProtocol({
+test('a bot notice: the instruction is the preamble alone, and the text appears once', () => {
+  const autonomyPreamble = preambleModule.buildTrustedBotNoticeProtocol({
     botId: 'B0A1DJMJJ2Y', channel: 'C0CGH5ARQGJ', threadTs: '1.1',
-    helperPath: '/hive/reply', nodeCommand: '/hive/node', testo: TESTO_BOT,
+    helperPath: '/hive/reply', nodeCommand: '/hive/node', text: BOT_TEXT,
   });
-  const istruzione = precisa.buildGodInstruction({
-    autonomyPreamble, text: TESTO_BOT, fromTrustedBot: 'B0A1DJMJJ2Y',
+  const instruction = precise.buildGodInstruction({
+    autonomyPreamble, text: BOT_TEXT, fromTrustedBot: 'B0A1DJMJJ2Y',
   });
-  assert.strictEqual(istruzione, autonomyPreamble, 'il testo grezzo non si riaccoda');
-  const occorrenze = istruzione.split(TESTO_BOT).length - 1;
-  assert.strictEqual(occorrenze, 1, 'il testo compare una volta sola: ' + occorrenze);
-  const apre = istruzione.indexOf('<<<NOTIFICA');
-  const chiude = istruzione.indexOf('NOTIFICA>>>');
-  assert.ok(istruzione.indexOf(TESTO_BOT) > apre && istruzione.indexOf(TESTO_BOT) < chiude,
-    'e sta fra i delimitatori');
+  assert.strictEqual(instruction, autonomyPreamble, 'the raw text is not appended again');
+  const occurrences = instruction.split(BOT_TEXT).length - 1;
+  assert.strictEqual(occurrences, 1, 'the text appears once only: ' + occurrences);
+  const opening = instruction.indexOf('<<<NOTICE');
+  const closing = instruction.indexOf('NOTICE>>>');
+  assert.ok(instruction.indexOf(BOT_TEXT) > opening && instruction.indexOf(BOT_TEXT) < closing,
+    'and it sits between the delimiters');
 });
 
-test('richiesta da una persona: preambolo più testo, come oggi', () => {
-  assert.strictEqual(precisa.buildGodInstruction({ autonomyPreamble: '[P] ', text: 'ciao' }), '[P] ciao');
+test('a request from a person: preamble plus text, as today', () => {
+  assert.strictEqual(precise.buildGodInstruction({ autonomyPreamble: '[P] ', text: 'hello' }), '[P] hello');
 });
 
-test('senza preambolo non c\'è istruzione', () => {
-  assert.strictEqual(precisa.buildGodInstruction({ text: 'ciao' }), undefined);
+test('with no preamble there is no instruction', () => {
+  assert.strictEqual(precise.buildGodInstruction({ text: 'hello' }), undefined);
 });
 
-test('il messaggio IPC porta fromTrustedBot e i file', () => {
-  const msg = precisa.buildSlackIpcMessage({
-    text: TESTO_BOT, channel: 'C', ts: '1.1', thread_ts: '1.1',
+test('the IPC message carries fromTrustedBot and the files', () => {
+  const msg = precise.buildSlackIpcMessage({
+    text: BOT_TEXT, channel: 'C', ts: '1.1', thread_ts: '1.1',
     fromTrustedBot: 'B0A1DJMJJ2Y', files: [{ path: '/x' }], buildPreamble: () => '[PRE]',
   });
   assert.strictEqual(msg.fromTrustedBot, 'B0A1DJMJJ2Y');
   assert.strictEqual(msg.autonomyPreamble, '[PRE]');
-  assert.strictEqual(msg.text, TESTO_BOT, 'il testo resta per titolo e descrizione della scheda');
+  assert.strictEqual(msg.text, BOT_TEXT, 'the text stays for the card title and description');
   assert.deepStrictEqual(msg.files, [{ path: '/x' }]);
 });
 
-test('un messaggio umano non porta fromTrustedBot', () => {
-  const msg = precisa.buildSlackIpcMessage({
-    text: 'ciao', channel: 'C', ts: '1.1', thread_ts: '1.1', buildPreamble: () => '[PRE]',
+test('a human message carries no fromTrustedBot', () => {
+  const msg = precise.buildSlackIpcMessage({
+    text: 'hello', channel: 'C', ts: '1.1', thread_ts: '1.1', buildPreamble: () => '[PRE]',
   });
   assert.strictEqual(msg.fromTrustedBot, undefined);
 });

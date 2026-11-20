@@ -2143,8 +2143,8 @@ async function startSlackServer(): Promise<{ ok: boolean; url?: string; error?: 
         threadTs: m.thread_ts,
         helperPath: slackReplyScriptPath(),
         nodeCommand: hive.nodeCommand(),
-        testo: m.text,
-        protocolloUmano: () => buildAutonomousRequestProtocol(
+        text: m.text,
+        humanProtocol: () => buildAutonomousRequestProtocol(
           m.channel, m.thread_ts, slackReplyScriptPath(), jiraProjects.slackProjectFor(m.channel)),
       }),
     });
@@ -2163,18 +2163,18 @@ async function startSlackServer(): Promise<{ ok: boolean; url?: string; error?: 
         onMessage,
         activatedThreadsFile
       });
-  // Il bot dell'app, da `auth.test`: serve all'anti-loop dei bot fidati, che senza questo si regge
-  // solo sull'utente. Se la chiamata fallisce non è un errore: si resta come prima.
+  // The app bot, from `auth.test`: the trusted-bot anti-loop needs it, and without it the loop
+  // rests on the user alone. A failed call is not an error: everything stays as before.
   if (cfg.slackBotToken) {
     try {
-      const risposta = await fetch('https://slack.com/api/auth.test', {
+      const response = await fetch('https://slack.com/api/auth.test', {
         headers: { Authorization: `Bearer ${cfg.slackBotToken}` },
       });
-      const corpo = (await risposta.json()) as { ok?: boolean; bot_id?: string };
-      if (corpo && corpo.ok && typeof corpo.bot_id === 'string' && corpo.bot_id) {
-        slackServer.setAppBotId(corpo.bot_id);
+      const body = (await response.json()) as { ok?: boolean; bot_id?: string };
+      if (body && body.ok && typeof body.bot_id === 'string' && body.bot_id) {
+        slackServer.setAppBotId(body.bot_id);
       }
-    } catch { /* rete assente: si resta con l'anti-loop sull'utente */ }
+    } catch { /* no network: the anti-loop stays on the user */ }
   }
   const res = await slackServer.start();
   // ok:false means we never bound the port → drop the instance. ok:true with no

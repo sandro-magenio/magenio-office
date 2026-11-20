@@ -1,9 +1,9 @@
 /**
- * T139 g4 · I due collegamenti del main, letti nel sorgente.
+ * T139 g4 · The two main-side joints, read in the source.
  *
- * Trenton ha mostrato che due mutazioni restavano verdi: la provenienza non passata al costruttore del
- * messaggio, e il bot dell'app non consegnato al filtro dopo `auth.test`. Sono il confine di sicurezza
- * della scheda, e un test che legge il sorgente li vede anche quando il codice compila.
+ * Two mutations used to stay green: the provenance not passed to the message builder, and the app bot
+ * not handed to the filter after `auth.test`. They are this card's security boundary, and a test that
+ * reads the source sees them even when the code compiles.
  */
 const test = require('node:test');
 const assert = require('node:assert');
@@ -12,29 +12,29 @@ const path = require('node:path');
 
 const main = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'index.ts'), 'utf8');
 
-/** Il blocco di `onMessage` che costruisce il messaggio per il renderer. */
-function bloccoIpc() {
-  const inizio = main.indexOf('const ipcMsg = buildSlackIpcMessage({');
-  assert.notStrictEqual(inizio, -1, 'buildSlackIpcMessage deve essere chiamata da onMessage');
-  return main.slice(inizio, main.indexOf('\n    });', inizio));
+/** The `onMessage` block that builds the message for the renderer. */
+function ipcBlock() {
+  const start = main.indexOf('const ipcMsg = buildSlackIpcMessage({');
+  assert.notStrictEqual(start, -1, 'buildSlackIpcMessage must be called from onMessage');
+  return main.slice(start, main.indexOf('\n    });', start));
 }
 
-test('onMessage passa la provenienza al costruttore del messaggio', () => {
-  const blocco = bloccoIpc();
-  // La prima occorrenza è quella che costruisce il messaggio: deve essere il campo del messaggio,
-  // non un valore inventato. La seconda guida la scelta del preambolo.
-  const occorrenze = blocco.match(/fromTrustedBot:\s*[^,\n]+/g) || [];
-  assert.deepStrictEqual(occorrenze,
+test('onMessage passes the provenance to the message builder', () => {
+  const block = ipcBlock();
+  // The first occurrence builds the message: it must be the message field, not an invented value.
+  // The second one drives the preamble choice.
+  const matched = block.match(/fromTrustedBot:\s*[^,\n]+/g) || [];
+  assert.deepStrictEqual(matched,
     ['fromTrustedBot: m.fromTrustedBot', 'fromTrustedBot: m.fromTrustedBot'],
-    'entrambe devono venire dal messaggio ricevuto');
-  assert.ok(blocco.indexOf('fromTrustedBot:') < blocco.indexOf('files:'),
-    'la provenienza precede i file: è un argomento del costruttore, non un dettaglio interno');
+    'both must come from the received message');
+  assert.ok(block.indexOf('fromTrustedBot:') < block.indexOf('files:'),
+    'the provenance precedes the files: it is a builder argument, not an internal detail');
 });
 
-test('dopo auth.test il bot dell\'app arriva al filtro', () => {
-  const inizio = main.indexOf("fetch('https://slack.com/api/auth.test'");
-  assert.notStrictEqual(inizio, -1, 'auth.test deve essere chiamata');
-  const dopo = main.slice(inizio, inizio + 800);
-  assert.match(dopo, /slackServer\.setAppBotId\(corpo\.bot_id\)/,
-    'senza questo, l\'anti-loop sul bot dell\'app non è attivo');
+test('after auth.test the app bot reaches the filter', () => {
+  const start = main.indexOf("fetch('https://slack.com/api/auth.test'");
+  assert.notStrictEqual(start, -1, 'auth.test must be called');
+  const after = main.slice(start, start + 800);
+  assert.match(after, /slackServer\.setAppBotId\(body\.bot_id\)/,
+    'without this, the app-bot anti-loop is not active');
 });

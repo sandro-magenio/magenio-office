@@ -528,7 +528,7 @@ export interface HarnessConfig {
   slackAppToken?: string;
   /** Restrict ingestion to one channel id; empty/undefined = any channel. */
   slackChannelId?: string;
-  /** Coppie (bot, canale) di cui si accettano le citazioni: vuoto = comportamento di oggi. */
+  /** (bot, channel) pairs whose mentions are accepted: empty = today's behaviour. */
   slackTrustedBots?: Array<{ botId: string; channel: string }>;
   /** Local HTTP port the webhook server binds to (default 3847). */
   slackPort?: number;

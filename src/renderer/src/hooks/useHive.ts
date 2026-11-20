@@ -1081,8 +1081,8 @@ export function useHive(config: HarnessConfig | null): void {
       // instruction (what gets typed into his PTY), so the board stays readable
       // while every Slack-origin god-session runs under the autonomy policy. When
       // main sends no preamble (older build), god just gets the raw text.
-      // La regola sta in una funzione condivisa: per una notifica da un bot il preambolo contiene
-      // già il testo delimitato, e riaccodare il grezzo lo farebbe rientrare fuori dai delimitatori.
+      // The rule lives in a shared function: for a bot notice the preamble already contains
+      // the delimited text, and appending the raw text would put it back outside the delimiters.
       const instruction = buildGodInstruction({
         autonomyPreamble: msg.autonomyPreamble, text, fromTrustedBot: msg.fromTrustedBot,
       });
