@@ -1,3 +1,5 @@
+import { chooseSlackPreamble } from '../shared/slackPreamble';
+import { buildSlackIpcMessage } from '../shared/slackInstruction';
 import { gscConfigForProject, magentoConfigForProject, magentoStageConfigForProject, magentoDeniedReadPaths } from './magentoMcp';
 import { checkN8nToken } from './n8nTokenCheck';
 import { shouldRetryWithoutResume } from '../shared/resumeFailure';
@@ -2131,25 +2133,49 @@ async function startSlackServer(): Promise<{ ok: boolean; url?: string; error?: 
     // PROTOCOL carries THIS request's concrete channel, thread_ts, and the
     // resolved helper path — god hands the worker an exact reply command.
     // Server-side so it applies to every session.
-    const ipcMsg: { text: string; channel: string; ts: string; thread_ts: string; autonomyPreamble: string; files?: typeof localFiles } = {
+    const ipcMsg = buildSlackIpcMessage({
       text: m.text, channel: m.channel, ts: m.ts, thread_ts: m.thread_ts,
-      autonomyPreamble: buildAutonomousRequestProtocol(m.channel, m.thread_ts, slackReplyScriptPath(), jiraProjects.slackProjectFor(m.channel))
-    };
-    if (localFiles.length > 0) ipcMsg.files = localFiles;
+      fromTrustedBot: m.fromTrustedBot,
+      files: localFiles,
+      buildPreamble: () => chooseSlackPreamble({
+        fromTrustedBot: m.fromTrustedBot,
+        channel: m.channel,
+        threadTs: m.thread_ts,
+        helperPath: slackReplyScriptPath(),
+        nodeCommand: hive.nodeCommand(),
+        testo: m.text,
+        protocolloUmano: () => buildAutonomousRequestProtocol(
+          m.channel, m.thread_ts, slackReplyScriptPath(), jiraProjects.slackProjectFor(m.channel)),
+      }),
+    });
     try { liveWebContents()?.send('slack:incomingMessage', ipcMsg); }
     catch { /* window torn down */ }
   };
   // Socket Mode dials out to Slack: no HTTP listener and NO tunnel to open.
   const activatedThreadsFile = join(app.getPath('userData'), 'slack-activated-threads.json');
   slackServer = socketMode
-    ? new SlackSocketServer({ appToken: cfg.slackAppToken as string, channelId: cfg.slackChannelId, onMessage, activatedThreadsFile, onLog: (e) => hive.appendLog(e) })
+    ? new SlackSocketServer({ appToken: cfg.slackAppToken as string, channelId: cfg.slackChannelId, trustedBots: cfg.slackTrustedBots, onMessage, activatedThreadsFile, onLog: (e) => hive.appendLog(e) })
     : new SlackWebhookServer({
         port: cfg.slackPort && cfg.slackPort > 0 ? cfg.slackPort : 3847,
         signingSecret: cfg.slackSigningSecret as string,
         channelId: cfg.slackChannelId,
+        trustedBots: cfg.slackTrustedBots,
         onMessage,
         activatedThreadsFile
       });
+  // Il bot dell'app, da `auth.test`: serve all'anti-loop dei bot fidati, che senza questo si regge
+  // solo sull'utente. Se la chiamata fallisce non è un errore: si resta come prima.
+  if (cfg.slackBotToken) {
+    try {
+      const risposta = await fetch('https://slack.com/api/auth.test', {
+        headers: { Authorization: `Bearer ${cfg.slackBotToken}` },
+      });
+      const corpo = (await risposta.json()) as { ok?: boolean; bot_id?: string };
+      if (corpo && corpo.ok && typeof corpo.bot_id === 'string' && corpo.bot_id) {
+        slackServer.setAppBotId(corpo.bot_id);
+      }
+    } catch { /* rete assente: si resta con l'anti-loop sull'utente */ }
+  }
   const res = await slackServer.start();
   // ok:false means we never bound the port → drop the instance. ok:true with no
   // url just means the tunnel is unavailable; the local handler is still live.

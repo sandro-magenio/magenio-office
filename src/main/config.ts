@@ -528,6 +528,8 @@ export interface HarnessConfig {
   slackAppToken?: string;
   /** Restrict ingestion to one channel id; empty/undefined = any channel. */
   slackChannelId?: string;
+  /** Coppie (bot, canale) di cui si accettano le citazioni: vuoto = comportamento di oggi. */
+  slackTrustedBots?: Array<{ botId: string; channel: string }>;
   /** Local HTTP port the webhook server binds to (default 3847). */
   slackPort?: number;
   /** Opt-in: allow APP/VOICE-INITIATED proactive posting into Slack (e.g. the
@@ -660,6 +662,7 @@ const DEFAULTS: HarnessConfig = {
   slackMode: 'events',
   slackAppToken: undefined,
   slackChannelId: undefined,
+  slackTrustedBots: [],
   slackPort: undefined,
   slackProactivePosting: false,
   freeflowEnabled: true,
